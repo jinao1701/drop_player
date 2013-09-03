@@ -1,0 +1,693 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009"  
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" width="950" height="400" creationComplete="application1_creationCompleteHandler(event)" addedToStage="application1_addedToStageHandler(event)">
+	<fx:Script>
+		<![CDATA[
+			import com.audio.base.Audio;
+			
+			import flash.text.engine.CFFHinting;
+			import flash.utils.clearTimeout;
+			import flash.utils.setTimeout;
+			
+			import mx.controls.Alert;
+			import mx.core.FlexGlobals;
+			import mx.core.UIComponent;
+			import mx.events.FlexEvent;
+			
+			import spark.components.Image;
+			private var conn:NetConnection = null;
+			private var stream:NetStream = null;
+			private var _urlConn:String=null;
+			private var _urlPlayName:String=null;
+			private var _deviceName:String=null;
+			private var _playState:String="pause";
+			private var _volState:String="normal";
+			private var _audioState:String="normal";
+			protected var audio:Audio = null;
+		    public function connect():void
+			{
+				if ( null == conn )
+				{
+					var client:Object=new Object();
+					client.onBWCheck=function():void{};
+					conn = new NetConnection();
+					conn.client=client;
+					conn.addEventListener(NetStatusEvent.NET_STATUS, netStatusHandler); 
+					conn.addEventListener(SecurityErrorEvent.SECURITY_ERROR, securityErrorHandler); 
+					conn.addEventListener(AsyncErrorEvent.ASYNC_ERROR, asyncErrorHandler); 
+					conn.connect(_urlConn);
+				}
+			}
+			private var  video:Video;
+			private function connectStream():void { 
+				
+				stream = new NetStream(conn); 
+				//stream.bufferTime = 1;
+				stream.soundTransform=volumeTransform;
+				stream.addEventListener(NetStatusEvent.NET_STATUS, netStreamStatusHandler); 
+				stream.addEventListener(AsyncErrorEvent.ASYNC_ERROR, asyncErrorHandler); 
+				play();
+				if ( video )
+				{
+					video_comp.removeChild(video);
+					video =null;
+				}
+				video = new Video(); 
+				video.width = video_comp.width;
+				video.height = video_comp.height;
+				video.attachNetStream(stream); 
+				video_comp.addChild(video); 
+			
+			} 
+			protected function closeAll():void
+			{
+				try{
+					if (  stream )
+					{
+						stream.removeEventListener(NetStatusEvent.NET_STATUS, netStreamStatusHandler); 
+						stream.removeEventListener(AsyncErrorEvent.ASYNC_ERROR, asyncErrorHandler); 
+						stream.close();
+						stream = null;
+					}
+					if ( conn )
+					{
+						conn.removeEventListener(NetStatusEvent.NET_STATUS, netStatusHandler); 
+						conn.removeEventListener(SecurityErrorEvent.SECURITY_ERROR, securityErrorHandler); 
+						conn.removeEventListener(AsyncErrorEvent.ASYNC_ERROR, asyncErrorHandler); 
+						conn.close();
+						conn = null;
+					}
+				}catch(e:Error){
+				
+				}
+			}
+			private var connState:Boolean=false;
+			private var _U1:int=0;
+			private function netStreamStatusHandler(evt:NetStatusEvent ):void{
+				switch (evt.info.code) { 
+				
+					case "NetStream.Play.Failed":
+					case "NetStream.Failed":
+					case "NetStream.Play.UnpublishNotify":
+					case "NetStream.Play.StreamNotFound": 
+						videoCfg(0); 
+						id_notconn_group.visible = true;
+						connState = false;
+						_playState = "pause";
+						break; 
+					case "NetStream.Play.PublishNotify":
+						if ( id_notconn_group.visible )
+						{
+							id_notconn_group.visible = false;
+							videoCfg(1);
+						}
+						connState = true;
+						_playState = "play";
+						break;					
+				} 
+			
+			}
+			private function netStatusHandler(event:NetStatusEvent):void { 
+				_U1=1;
+				switch (event.info.code) { 
+					case "NetConnection.Connect.Closed":
+					case "NetConnection.Connect.Rejected":
+					case "NetConnection.Connect.Failed":	
+						break;
+					case "NetConnection.Connect.Success": 
+						if ( id_notconn_group.visible )
+						{
+							id_notconn_group.visible = false;
+							videoCfg(1);
+						}
+						connState = true;
+						connectStream(); 
+						break; 
+					
+				} 
+			} 
+			protected function connectNew():void
+			{
+				if ( null==conn || !conn.connected )
+				{
+					closeAll();
+					connect();
+				}else {
+					if (  stream )
+					{
+						stream.removeEventListener(NetStatusEvent.NET_STATUS, netStreamStatusHandler); 
+						stream.removeEventListener(AsyncErrorEvent.ASYNC_ERROR, asyncErrorHandler); 
+						stream.close();
+						stream = null;
+					}
+					connectStream();
+				}
+				
+			}
+			private function securityErrorHandler(event:SecurityErrorEvent):void { 
+				trace("securityErrorHandler: " + event); 
+			} 
+			
+			private function asyncErrorHandler(event:AsyncErrorEvent):void { 
+				// ignore AsyncErrorEvent events. 
+			} 
+			protected function application1_creationCompleteHandler(event:FlexEvent):void
+			{
+//				var params:Object = FlexGlobals.topLevelApplication.parameters;
+//				video_comp.source = params.src;
+//				video_comp.autoPlay = params.autoPlay;
+				
+				createTimer();
+				_urlConn = FlexGlobals.topLevelApplication.parameters.app;
+				_urlPlayName = FlexGlobals.topLevelApplication.parameters.play_name;
+				_deviceName = FlexGlobals.topLevelApplication.parameters.device_name;
+				device_name_lable.text = _deviceName;
+				setVol();
+				connect();
+				
+				
+			}
+			protected function application1_addedToStageHandler(event:Event):void
+			{
+				if ( !stage.hasEventListener(FullScreenEvent.FULL_SCREEN))
+					stage.addEventListener(FullScreenEvent.FULL_SCREEN,fullScreenHandler);
+			}
+			
+			protected function play():void
+			{
+				_playState = "play";
+				stream.play(_urlPlayName);
+			}
+			protected function resume():void
+			{
+				stream.resume();
+				_playState = "play";
+			}
+			protected function pause():void
+			{
+				stream.pause();
+				_playState = "pause";
+			}
+			protected function vol_mouseOverHandler(event:MouseEvent):void
+			{
+//				var ui:UIComponent = event.target as UIComponent;
+				setVolHSliderVisible(true);
+			}
+			
+			protected function vol_mouseOutHandler(event:MouseEvent):void
+			{
+				if ( event.target == vol_hgroup )
+				{
+					setVolHSliderVisible(false);
+				}
+			}
+			public function setVolHSliderVisible(visible:Boolean ):void
+			{
+				if ( visible )
+				{
+					id_vol_normal.visible = false;
+					id_vol_over.visible=true;
+				}else{
+					id_vol_over.visible=false;
+					id_vol_normal.visible = true;
+				}
+			}
+			
+			protected function vol_hslider_mouseOutHandler(event:MouseEvent):void
+			{
+				setVolHSliderVisible(false);
+			}
+			
+			protected function vol_hslider_mouseOverHandler(event:MouseEvent):void
+			{
+				setVolHSliderVisible(true);
+			}
+			private var isFullScreen:Boolean = false;
+			private const DEFAULT_WIDTH:int=640;
+			private const DEFAULT_HEIGHT:int=360;
+			protected function fullScreen_clickHandler(event:MouseEvent):void {
+				if ( !stage.hasEventListener(FullScreenEvent.FULL_SCREEN))
+					stage.addEventListener(FullScreenEvent.FULL_SCREEN,fullScreenHandler);
+				if(!isFullScreen) 
+				{
+					isFullScreen = true;
+					var _w:int = Capabilities.screenResolutionX;
+					var _h:int = Capabilities.screenResolutionY;
+					stage.fullScreenSourceRect = new Rectangle(0,0,_w,_h);
+					stage.displayState = StageDisplayState.FULL_SCREEN;
+				
+				}else{
+					isFullScreen = false;
+					stage.displayState = StageDisplayState.NORMAL;
+					
+				}
+			}
+			protected function fullScreenHandler( evt:FullScreenEvent ):void
+			{
+				if(evt.fullScreen) {
+					var _w:int = Capabilities.screenResolutionX;
+					var _h:int = Capabilities.screenResolutionY;
+					bottom_fill.visible=false;
+					bottom_content.top = _h-40;
+					main_content.height= _h-40;
+					id_video_group.width = _w-12;
+					id_video_group.height= _h-40;
+					video_comp.height= video.height= id_video_group.height;
+					video_comp.width = video.width = id_video_group.width;
+					isFullScreen = true;
+				}
+				else {
+					video_comp.height = video.height = DEFAULT_HEIGHT;
+					video_comp.width  = video.width  = DEFAULT_WIDTH;
+					id_video_group.width=652;
+					id_video_group.height=360;
+					main_content.height=360;
+					bottom_content.top=360;
+					
+					bottom_fill.visible=true;
+					isFullScreen = false;
+				}
+			}
+			protected function group1_clickHandler(event:MouseEvent):void
+			{
+				if ( _playState == "pause" )
+				{
+					resume();
+//					id_bitmap_play.source = "assets/images/icon_pause.png";
+				}else if ( _playState == "play" )
+				{
+					pause();
+//					id_bitmap_play.source = "assets/images/video_play.jpg";
+				}
+				
+			}
+			
+			protected function group2_clickHandler(event:MouseEvent):void
+			{
+				if ( _volState == "normal" )
+				{
+					stopVol();
+					id_bitmap_vol.source = "assets/images/bg_vol_mute.png";
+				}else if ( _volState == "stop" )
+				{
+					playVol();
+					id_bitmap_vol.source = "assets/images/vol_highlight.png";
+				}
+			}
+			protected function stopVol():void
+			{
+				_volState = "stop";
+				vol_hslider.value = 0;
+				volumeChangeHandler(null);
+				vol_hslider.enabled = false;
+				
+			}
+			protected function playVol():void
+			{
+				_volState = "normal";
+				vol_hslider.value = 0.5;
+				volumeChangeHandler(null);
+				vol_hslider.enabled = true;
+			}
+			private var volumeTransform:SoundTransform;
+			protected function setVol():void
+			{
+				volumeTransform=new SoundTransform();  
+				vol_hslider.value = volumeTransform.volume;  
+				vol_hslider.addEventListener(Event.CHANGE, volumeChangeHandler);  
+			}
+			private function volumeChangeHandler(event:Event):void {  
+				volumeTransform.volume = vol_hslider.value;  
+				if ( stream )
+					stream.soundTransform = volumeTransform;  
+			} 
+			private var _time1:uint = 0;
+			
+			protected function group3_mouseOutHandler(event:MouseEvent):void
+			{
+				_time1 = setTimeout(execTime1,3000);
+			}
+			
+			protected function group3_mouseOverHandler(event:MouseEvent):void
+			{
+				if ( _time1>0 )
+					clearTimeout(_time1);
+				_time1 =0;
+				setControlVisible(true);
+				
+			}
+			protected function setControlVisible(visible:Boolean ):void
+			{
+				if (	_audioState == "speak" )
+				{
+					if ( id_control_hgroup_2.visible != visible )
+						id_control_hgroup_2.visible = visible;
+				}else if ( id_control_hgroup_1.visible != visible )
+					id_control_hgroup_1.visible = visible;
+			}
+			protected function execTime1():void
+			{
+				clearTimeout(_time1);
+				_time1 =0;
+				setControlVisible(false);
+			}
+			
+			protected var timer:Timer =null;
+			protected function createTimer():void
+			{
+				timer = new Timer(1000);
+				timer.addEventListener(TimerEvent.TIMER,onTimer);
+				timer.start();
+			}
+			protected function onTimer(evt:TimerEvent):void
+			{
+				id_time_lable.text = "LIVE VIEW: "+df.format(new Date());
+//				if ( _U1 > 0 && !connState )
+//				{
+//					connectNew();
+//				}
+			}
+			
+			protected function createAudio():void
+			{
+				if ( null ==audio )
+					audio = new Audio();
+				audio.url_play =  FlexGlobals.topLevelApplication.parameters.app;
+				audio.audio_target = FlexGlobals.topLevelApplication.parameters.audio_name;
+				audio.connect();
+				_audioState = "speak";
+				id_talk_image.source = "assets/images/talk_current.png";
+				speakCfg(true);
+			}
+			private var microPhone:Microphone;
+			public function checkMicrophone():String
+			{	
+				var msgStr:String="";
+				microPhone = Microphone.getMicrophone();
+				if ( null == microPhone )
+				{
+					
+					msgStr = "没有麦克风设备或者设备被占用，请检查!";
+				
+				}else{
+					if (microPhone.muted )
+					{
+						msgStr = "muted";
+						microPhone.addEventListener(StatusEvent.STATUS,onPhoneStatusEvent);
+						Security.showSettings(SecurityPanel.PRIVACY);
+					}
+				}
+				if ( msgStr.length==0 )
+					createAudio();
+				return msgStr;
+			}
+			protected function onPhoneStatusEvent(evt:StatusEvent ):void
+			{
+				microPhone.removeEventListener(StatusEvent.STATUS,onPhoneStatusEvent);
+				microPhone = null;
+				switch( evt.code )
+				{
+					case "Microphone.Muted":{
+						closeAudio();
+					}
+					case "Microphone.Unmuted":{
+						createAudio();
+					}
+				}
+			}
+			protected function closeAudio():void
+			{
+				_audioState = "normal";
+				audio.closeStream();
+				id_talk_image.source = "assets/images/talk.png";
+				speakCfg(false);
+			}
+			protected function group_talkdefault_clickHandler(event:MouseEvent):void
+			{
+				if ( _audioState == "normal" )
+				{
+					checkMicrophone();
+				}else if ( _audioState == "speak" )
+				{
+					closeAudio();
+				}
+			}
+			protected function speakCfg(flag:Boolean):void
+			{
+				if ( _time1 > 0 )
+				{
+					clearTimeout(_time1);
+					_time1=0;
+				}
+				if ( flag )
+				{
+					id_control_hgroup_1.visible = false;
+					id_control_hgroup_2.visible = true;
+				}else
+				{
+					id_control_hgroup_2.visible = false;
+					id_control_hgroup_1.visible = true;
+				}
+			}
+			
+			protected function id_speak_3_clickHandler(event:MouseEvent):void
+			{
+				closeAudio();
+			}
+			protected function videoCfg(alpha:Number):void
+			{
+				video_comp.alpha = alpha;
+			}
+			
+			private var _playMouseState:String="out";
+			protected function id_play_group_mouseOverHandler(event:MouseEvent):void
+			{
+//				if ( _playState=="pause" )
+//				{
+//				
+//				}else
+//				if ( _playState=="play" )
+//				{
+					if ( _playMouseState =="out"   )
+					{
+						_playMouseState="over";
+						id_bitmap_play.source="assets/images/play_highlight.png";
+						
+					}
+//				}
+			}
+			
+			protected function id_play_group_mouseOutHandler(event:MouseEvent):void
+			{
+//				if ( _playState=="play" )
+//				{
+			
+					if ( _playMouseState == "over" )
+					{
+						_playMouseState="out";
+						id_bitmap_play.source="assets/images/icon_pause.png";
+					}
+//				}
+			}
+			
+			protected function group4_mouseOverHandler(event:MouseEvent):void
+			{
+				id_fullscreen_image.source = "assets/images/icon_fullscreen_over.png";
+				
+			}
+			
+			protected function id_fullscreen_image_mouseOutHandler(event:MouseEvent):void
+			{
+				id_fullscreen_image.source = "assets/images/icon_fullscreen.png";
+			}
+			
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<!-- 将非可视元素（例如服务、值对象）放在此处 -->
+		<s:DateTimeFormatter id="df" useUTC="false" locale="zh-Hans-CN" dateTimePattern="hh:mm:ss a"/>
+	</fx:Declarations>
+	<s:Group width="100%" height="100%" >
+		<!--主体-->
+		<s:Group id="main_content" width="100%" height="360" top="0" >
+			<!--背景-->
+			<s:Rect width="100%" height="100%">
+				<s:fill>
+					<s:BitmapFill id="bg_main_content"  source="@Embed('assets/images/bg_main_content.png')"/>
+				</s:fill>
+			</s:Rect>
+			<!--视频-->
+			<s:Group id="id_video_group" width="652" height="360" horizontalCenter="0" verticalCenter="0" clipAndEnableScrolling="true">
+				<s:Rect left="0" width="6" height="100%" >
+					<s:fill>
+						<s:SolidColor color="0xffffff"/>
+					</s:fill>
+				</s:Rect>
+				<s:Rect right="0" width="6" height="100%" >
+					<s:fill>
+						<s:SolidColor color="0xffffff"/>
+					</s:fill>
+				</s:Rect>
+				<s:Group  width="640" height="360" horizontalCenter="0" verticalCenter="0">
+					<s:Rect width="100%" height="100%">
+						<s:fill>
+							<s:RadialGradient   >
+								<s:GradientEntry color="0x000000" ratio="0" alpha="0.6"/> 
+								<s:GradientEntry color="0x000000" ratio="1" alpha="0.7" /> 
+							</s:RadialGradient>
+						</s:fill>
+					</s:Rect>
+					<s:VGroup id="id_notconn_group" visible="false" width="400" height="200" gap="0"  color="0xffffff" horizontalAlign="center" horizontalCenter="0" verticalCenter="0">
+						<s:Label width="240" height="26" fontSize="16"  text=" This Dropcam is not connected"/>
+						<s:Label width="220"  fontSize="13"  text="Make sure your Dropcam has power  and is connected to a Wi-Fi network" maxDisplayedLines="2" /> 
+					</s:VGroup>
+				</s:Group>
+				<s:VideoDisplay id="video_comp"  width="640" height="360" top="0" left="6"/>
+			</s:Group>
+			<s:Group id="bottom_fill" width="652" height="3" horizontalCenter="0" verticalCenter="180">
+				<s:Rect width="100%" height="100%" bottomLeftRadiusX="5" bottomRightRadiusX="5" bottomLeftRadiusY="3" bottomRightRadiusY="3">
+					<s:fill >
+						<s:LinearGradient   >
+							<s:GradientEntry color="0x000000" ratio="0" alpha="0.5"/> 
+							<s:GradientEntry color="0x000000" ratio="0.5" alpha="0.7" /> 
+							<s:GradientEntry color="0x000000" ratio="0.6" alpha="0.5"/> 
+						</s:LinearGradient>
+					</s:fill>
+				</s:Rect>
+			</s:Group>
+			<!--悬浮控制栏-->
+			<s:Group width="652" height="360" horizontalCenter="0" verticalCenter="0"
+					  mouseOut="group3_mouseOutHandler(event)"
+					  mouseOver="group3_mouseOverHandler(event)"
+					 >
+				<s:HGroup id="id_control_hgroup_2"  width="100%" height="54"  bottom="24" gap="4"
+						  horizontalAlign="center" verticalAlign="middle" visible="false" 
+						  >
+					<s:Group id="id_speak_1" width="82" height="26"  buttonMode="true" useHandCursor="true" >
+						<s:Rect width="82" height="26" verticalCenter="0">
+							<s:fill>
+								<s:BitmapFill   source="@Embed('assets/images/speaking.png')"/>
+							</s:fill>
+						</s:Rect>
+					</s:Group>
+					<s:Group id="id_speak_2" width="54" height="54" buttonMode="true" useHandCursor="true" >
+						<s:Image source="@Embed('assets/images/icon_talking.png')" />
+					</s:Group>
+					<s:Group id="id_speak_3" width="82" height="26"  buttonMode="true" useHandCursor="true" 
+							 click="id_speak_3_clickHandler(event)"
+							 >
+						<s:Rect width="82" height="26" verticalCenter="0">
+							<s:fill>
+								<s:BitmapFill   source="@Embed('assets/images/close.png')"/>
+							</s:fill>
+						</s:Rect>
+					</s:Group>
+				</s:HGroup>
+				<s:HGroup id="id_control_hgroup_1"  width="100%" height="54"  bottom="24" gap="4" 
+						   horizontalAlign="center" verticalAlign="middle" visible="false"
+						   >
+					
+					<s:Group id="vol_hgroup" width="150" height="100%"  
+						 mouseOut="vol_mouseOutHandler(event)"  
+							  >
+						<s:Group id="id_vol_over" width="112" height="26" verticalCenter="0" right="10" visible="false"
+								 >
+							<s:Group width="79" height="26">
+								<s:Rect width="100%" height="100%">
+									<s:fill>
+										<s:BitmapFill source="@Embed('assets/images/vol_comp.png')"/>
+									</s:fill>
+								</s:Rect>
+								<!--
+								mouseOut="vol_hslider_mouseOutHandler(event)"
+								mouseOver="vol_hslider_mouseOverHandler(event)"
+								-->
+								<s:HSlider id="vol_hslider" right="0"   verticalCenter="0"
+										   skinClass="com.audio.skin.HSliderSkin1" 
+										   minimum="0" maximum="1" width="70"    liveDragging="true"  snapInterval="0.1"
+										   buttonMode="true" useHandCursor="true" 
+										   />
+							</s:Group>
+							<s:Group  right="0" width="33" height="26"
+									  click="group2_clickHandler(event)"
+									  >
+								<s:Image  id="id_bitmap_vol" source="@Embed('assets/images/vol_highlight.png')"/>
+							</s:Group>
+						</s:Group>
+						
+						<s:Group id="id_vol_normal" width="40" height="26"   buttonMode="true" useHandCursor="true" 
+								verticalCenter="0" right="10"
+								 mouseOver="vol_mouseOverHandler(event)" >
+							<s:Image  source="@Embed('assets/images/icon_vol.png')"/>
+						</s:Group>
+					</s:Group>
+					<s:Group id="id_play_group" width="54" height="54" buttonMode="true" useHandCursor="true" 
+							 click="group1_clickHandler(event)"	
+							 mouseOver="id_play_group_mouseOverHandler(event)"
+							 >
+						<s:Image id="id_bitmap_play" width="54" height="54" source="@Embed('assets/images/icon_pause.png')" 
+								mouseOut="id_play_group_mouseOutHandler(event)"
+								 />
+						
+					</s:Group>
+					<s:Spacer id="id_spacer_1" width="10"/>
+					<s:Group id="id_fullscreen_group" width="150" height="100%"  buttonMode="true" useHandCursor="true"  click="fullScreen_clickHandler(null)">
+						<s:Group width="40" height="26" verticalCenter="0"
+								 mouseOver="group4_mouseOverHandler(event)"
+								 >
+							<s:Image  id="id_fullscreen_image" source="@Embed('assets/images/icon_fullscreen.png')"
+									  mouseOut="id_fullscreen_image_mouseOutHandler(event)"
+									  />
+						</s:Group>
+					</s:Group>
+				</s:HGroup>
+			</s:Group>
+			
+		</s:Group>
+		<!--下边栏-->
+		<s:Group id="bottom_content" width="100%" height="40" top="360">
+			<s:Rect width="100%" height="38" >
+				<s:fill>
+					<s:LinearGradient rotation="90" >
+						<s:GradientEntry color="0xdcdad6" ratio="0" alpha="0.8"/> 
+						<s:GradientEntry color="0xdcdad6" ratio="0.5" /> 
+						<s:GradientEntry color="0xdcdad6" ratio="1" alpha="0.8"/> 
+					</s:LinearGradient>
+				</s:fill>
+			</s:Rect>
+			<s:Group id="group_iconname" 
+					 width="16" height="16" left="12" bottom="10" 
+					 buttonMode="true" useHandCursor="true"
+					 >
+				<s:BitmapImage  source="@Embed('assets/images/icon_name.png')"  />
+			</s:Group>
+			<s:Label id="device_name_lable" text="raycom" width="100" left="30" bottom="10" fontSize="15" alpha="0.5" fontWeight="bold" />
+			
+			<s:Label id="id_time_lable"  width="200" fontSize="13" left="400" bottom="10" alpha="0.5"/>
+			<s:Group id="group_talkdefault" width="60" height="27" right="195" bottom="3" 
+					 click="group_talkdefault_clickHandler(event)"
+					 >
+				<s:BitmapImage  id="id_talk_image" source="@Embed('assets/images/talk.png')" />
+			</s:Group>
+			<s:Group id="group_makeclip" width="94" height="28" right="98" bottom="3">
+				<s:BitmapImage  source="@Embed('assets/images/makeclip.png')" />
+			</s:Group>
+			<s:Group id="group_settings" width="85" height="27" right="10" bottom="3">
+				<s:BitmapImage   source="@Embed('assets/images/settings.png')" />
+			</s:Group>
+			<!--底部阴影部分-->
+			<s:Group width="100%" height="2" top="38">
+				<s:Rect width="100%" height="100%" >
+					<s:fill >
+						<s:LinearGradient  >
+							<s:GradientEntry color="0x000000" ratio="0" alpha="0.5"/> 
+						</s:LinearGradient>
+					</s:fill>
+				</s:Rect>
+			</s:Group>
+			
+		</s:Group>
+		
+	</s:Group>
+</s:Application>
