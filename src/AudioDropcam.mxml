@@ -43,7 +43,7 @@
 			private function connectStream():void { 
 				
 				stream = new NetStream(conn); 
-				//stream.bufferTime = 1;
+				stream.bufferTime = 1;
 				stream.soundTransform=volumeTransform;
 				stream.addEventListener(NetStatusEvent.NET_STATUS, netStreamStatusHandler); 
 				stream.addEventListener(AsyncErrorEvent.ASYNC_ERROR, asyncErrorHandler); 
